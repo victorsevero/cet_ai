@@ -14,3 +14,14 @@ ainda não encontrei uma forma de filtrar todos os veículos realmente ativos. f
 pensando com a cabeça fresca, resolvi o problema de que apareciam mais veículos do que realmente existia na cidade: o menu do jogo tem uma simulaçãozinha rodando, então existiam carros ativos nele. filtrei os carros cuja cidade eram `MenuCity` e resolveu.
 
 montei socket server/client e consegui puxar os dados pelo python. estou commitando.
+
+a captura das casas tá indo bem, mas o DestinationView não tem o mesmo atributo `tilePosition`. provavelmente vou ter que chamar o método `GetBounds()` ou reproduzir parte da lógica interna dele (`Vector2Int coordinates = this.Model.TileModels[0].Coordinates;`)
+
+pra acelerar o jogo pra treinamento, encontrei o método `OnExtraFastForwardPressed()` do `Motorways.Views.GameUIScreen`, que chama o método `SetTimeScale` da instância de `Game`. o problema é que Game não é MonoBehaviour e não encontrei onde ele é instanciado.
+
+existe uma instância de Game dentro do GameContainerScreen, que é um MonoBehaviour. por ela, consigo setar a velocidade do jogo, mas o Game só é instanciado quando a partida de fato começa, então preciso de uma forma de setar isso quando a partida começar pra não precisar setar isso dentro do update toda vez.
+
+
+
+# Referências
+https://github.com/paulalmasan/DRL-GNN-PPO

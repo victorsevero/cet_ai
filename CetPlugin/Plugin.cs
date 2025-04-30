@@ -18,7 +18,8 @@ public class Plugin : BaseUnityPlugin
 {
     internal static new ManualLogSource Logger;
 
-    private Type vehicleViewType;
+    private Type houseViewType;
+    private Type destinationViewType;
     private int frameCounter = 0;
     private GameState currentState = new GameState();
     private TcpClient client;
@@ -29,7 +30,18 @@ public class Plugin : BaseUnityPlugin
         Logger = base.Logger;
         Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
 
-        vehicleViewType = AccessTools.TypeByName("Motorways.Views.VehicleView");
+        houseViewType = AccessTools.TypeByName("Motorways.Views.HouseView");
+        if (houseViewType == null)
+        {
+            Logger.LogWarning("Tipo HouseView não encontrado!");
+            return;
+        }
+        destinationViewType = AccessTools.TypeByName("Motorways.Views.DestinationView");
+        if (destinationViewType == null)
+        {
+            Logger.LogWarning("Tipo DestinationView não encontrado!");
+            return;
+        }
 
         try
         {
@@ -45,30 +57,32 @@ public class Plugin : BaseUnityPlugin
 
     void Update()
     {
-        if (vehicleViewType == null)
-            return;
-
         frameCounter++;
         if (frameCounter % 60 != 0)
             return;
 
+        SetGameSpeed(100f);
         CaptureGameState();
     }
 
     void CaptureGameState()
     {
-        currentState.vehicles.Clear();
+        currentState.houses.Clear();
+        CaptureHouses();
+        currentState.destinations.Clear();
+        CaptureDestinations();
 
-        var vehicleViewType = AccessTools.TypeByName("Motorways.Views.VehicleView");
-        if (vehicleViewType == null)
-        {
-            Logger.LogWarning("Tipo VehicleView não encontrado!");
-            return;
-        }
+        Logger.LogInfo(
+            $"[GameState] {currentState.houses.Count} casas, {currentState.destinations.Count} destinos."
+        );
+        SendGameState();
+    }
 
-        var allVehicleViews = Resources.FindObjectsOfTypeAll(vehicleViewType);
+    void CaptureHouses()
+    {
+        var allHouseViews = Resources.FindObjectsOfTypeAll(houseViewType);
 
-        foreach (var viewObj in allVehicleViews)
+        foreach (var viewObj in allHouseViews)
         {
             if (viewObj == null)
                 continue;
@@ -81,65 +95,98 @@ public class Plugin : BaseUnityPlugin
             if (go == null || !go.activeInHierarchy)
                 continue;
 
-            var cityProp = AccessTools.Property(vehicleViewType, "City");
-            if (cityProp == null)
+            var tileField = AccessTools.Field(houseViewType, "tilePosition");
+            if (tileField == null)
                 continue;
 
-            var cityInstance = cityProp.GetValue(viewComponent);
-            if (cityInstance == null)
+            var city = AccessTools.Property(houseViewType, "City").GetValue(viewComponent);
+            var definition = AccessTools.Property(city.GetType(), "Definition").GetValue(city);
+            var definitionMono = definition as MonoBehaviour;
+            if (definitionMono.gameObject.name == "MenuCity")
                 continue;
 
-            var definitionProp = AccessTools.Property(cityInstance.GetType(), "Definition");
-            if (definitionProp == null)
-                continue;
+            Vector2Int tile = (Vector2Int)tileField.GetValue(viewComponent);
+            int color = (int)AccessTools.Field(houseViewType, "groupIndex").GetValue(viewComponent);
 
-            var definitionInstance = definitionProp.GetValue(cityInstance);
-            if (definitionInstance == null)
-                continue;
-
-            var definitionMono = definitionInstance as MonoBehaviour;
-            if (definitionMono == null)
-                continue;
-
-            var cityDefinitionName = definitionMono.gameObject?.name ?? "null";
-
-            if (cityDefinitionName == "MenuCity")
+            var snapshot = new HouseSnapshot
             {
-                continue;
-            }
+                x = tile.x,
+                y = tile.y,
+                color = color,
+            };
 
-            var pos = go.transform.position;
-            var snapshot = new VehicleSnapshot { x = pos.x, y = pos.y };
-
-            currentState.vehicles.Add(snapshot);
+            currentState.houses.Add(snapshot);
         }
-
-        Logger.LogInfo($"[GameState] Capturados {currentState.vehicles.Count} veículos!");
-        // SaveGameStateToJson();
-        SendGameState();
     }
 
-    void SaveGameStateToJson()
+    void CaptureDestinations()
     {
-        try
-        {
-            string json = JsonConvert.SerializeObject(currentState, Formatting.Indented);
+        var allDestinationViews = Resources.FindObjectsOfTypeAll(destinationViewType);
 
-            string folderPath = Path.Combine(Paths.BepInExRootPath, "GameStates");
-            if (!Directory.Exists(folderPath))
+        foreach (var viewObj in allDestinationViews)
+        {
+            if (viewObj == null)
+                continue;
+
+            var viewComponent = viewObj as MonoBehaviour;
+            if (viewComponent == null)
+                continue;
+
+            var go = viewComponent.gameObject;
+            if (go == null || !go.activeInHierarchy)
+                continue;
+
+            var city = AccessTools.Property(destinationViewType, "City").GetValue(viewComponent);
+            var definition = AccessTools.Property(city.GetType(), "Definition").GetValue(city);
+            var definitionMono = definition as MonoBehaviour;
+            if (definitionMono.gameObject.name == "MenuCity")
+                continue;
+
+            var modelProp = AccessTools.Property(destinationViewType, "Model");
+            if (modelProp == null)
+                continue;
+            var modelInstance = modelProp.GetValue(viewComponent);
+            if (modelInstance == null)
+                continue;
+
+            var tileModelsField = AccessTools.Property(modelInstance.GetType(), "TileModels");
+            if (tileModelsField == null)
+                continue;
+            var tileModels = tileModelsField.GetValue(modelInstance) as System.Collections.IList;
+            if (tileModels == null || tileModels.Count == 0)
+                continue;
+
+            var tileModel = tileModels[0];
+            var coordinatesField = AccessTools.Property(tileModel.GetType(), "Coordinates");
+            if (coordinatesField == null)
+                continue;
+            var tileCoordinates = (Vector2Int)coordinatesField.GetValue(tileModel);
+
+            var groupField = AccessTools.Field(destinationViewType, "groupIndex");
+            if (groupField == null)
+                continue;
+            int groupIndex = (int)groupField.GetValue(viewComponent);
+
+            var demandField = AccessTools.Property(destinationViewType, "PinCount");
+            if (demandField == null)
+                continue;
+            int demand = (int)demandField.GetValue(viewComponent);
+
+            var visibilityField = AccessTools.Field(destinationViewType, "_visibility");
+            if (visibilityField == null)
+                continue;
+            int visibility = (int)visibilityField.GetValue(viewComponent);
+
+            var snapshot = new DestinationSnapshot
             {
-                Directory.CreateDirectory(folderPath);
-            }
+                x = tileCoordinates.x,
+                y = tileCoordinates.y,
+                color = groupIndex,
+                demand = demand,
+                type = visibility,
+            };
 
-            string filePath = Path.Combine(folderPath, "latest_gamestate.json");
-
-            File.WriteAllText(filePath, json);
-
-            Logger.LogInfo($"[GameState] Snapshot salvo em {filePath}");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError($"Erro ao salvar GameState em JSON: {ex.Message}");
+            currentState.destinations.Add(snapshot);
         }
     }
 
@@ -160,15 +207,92 @@ public class Plugin : BaseUnityPlugin
             Logger.LogError($"[Socket] Erro ao enviar dados: {ex.Message}");
         }
     }
+
+    void SetGameSpeed(float speed)
+    {
+        var containerType = AccessTools.TypeByName("Motorways.Views.GameContainerScreen");
+        if (containerType == null)
+        {
+            Logger.LogWarning("Tipo GameContainerScreen não encontrado!");
+            return;
+        }
+
+        var containers = Resources.FindObjectsOfTypeAll(containerType);
+        if (containers.Length == 0)
+        {
+            Logger.LogWarning("Nenhuma instância de GameContainerScreen encontrada!");
+            return;
+        }
+
+        var containerInstance = containers[0];
+
+        var getActiveGameMethod = AccessTools.Method(containerType, "GetActiveGame");
+        if (getActiveGameMethod == null)
+        {
+            Logger.LogWarning("Método GetActiveGame não encontrado!");
+            return;
+        }
+
+        var gameInstance = getActiveGameMethod.Invoke(containerInstance, null);
+        if (gameInstance == null)
+        {
+            Logger.LogWarning("GetActiveGame() retornou null!");
+            return;
+        }
+
+        var timeScaleType = AccessTools.TypeByName("TimeScale");
+        if (timeScaleType == null)
+        {
+            Logger.LogWarning("Tipo TimeScale não encontrado!");
+            return;
+        }
+
+        var timeScaleInstance = Activator.CreateInstance(timeScaleType, new object[] { speed });
+
+        // Chama SetTimeScale
+        var gameType = gameInstance.GetType();
+        var setTimeScaleMethod = AccessTools.Method(gameType, "SetTimeScale");
+        if (setTimeScaleMethod == null)
+        {
+            Logger.LogWarning("Método SetTimeScale não encontrado no Game!");
+            return;
+        }
+
+        setTimeScaleMethod.Invoke(gameInstance, new object[] { timeScaleInstance });
+
+        Logger.LogInfo($"[Game] Velocidade do jogo setada para {speed}x.");
+    }
 }
 
-public class VehicleSnapshot
+public class HouseSnapshot
 {
-    public float x;
-    public float y;
+    public int x;
+    public int y;
+    public int color;
+}
+
+public class DestinationSnapshot
+{
+    public int x;
+    public int y;
+    public int color;
+    public int demand;
+    public int type; // 0 = NotShown, 1 = Square, 2 = Circle
+}
+
+public class ResourceSnapshot
+{
+    public int roads;
+    public int bridges;
+    public int highways;
+    public int tunnels;
+    public int trafficLights;
 }
 
 public class GameState
 {
-    public List<VehicleSnapshot> vehicles = new List<VehicleSnapshot>();
+    public List<HouseSnapshot> houses = new List<HouseSnapshot>();
+    public List<DestinationSnapshot> destinations = new List<DestinationSnapshot>();
+    public ResourceSnapshot resources = new ResourceSnapshot();
+    public int time_tick;
 }
