@@ -59,8 +59,7 @@ public static class ClockProcess_Step_Patch
             if (currDay > prevDay)
             {
                 Plugin.Logger.LogInfo($"[ClockProcess Patch] Novo dia: {currDay}. Pausando jogo.");
-                // TODO: maybe pause the game instead of setting speed to 0
-                Plugin.Instance.SetGameSpeed(0f);
+                Plugin.Instance.PauseGame();
             }
 
             lastClockTime = currentTime;

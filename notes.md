@@ -30,5 +30,11 @@ Peguei a lib FixedMath.dll do jogo e deixei como dependência pra conseguir logg
 pausar quando vira um dia está funcional! agora devo alterar para, em vez de chamar o `SetTimeScale`, usar os métodos `OnExtraFastForwardPressed` e `OnPausePressed` da classe `Motorways.Views.GameUIScreen` (ou talvez `Motorways.Views.GameUIScreenWrapper`, ainda não sei). também precisaria alterar o valor do `TimeScale.ExtraFast`.
 
 
+# Dia 6
+lembrar de, no futuro, investigar o RNG do jogo: inicialmente, talvez seja interessante fixar o RNG. de qualquer forma, para fins de reprodutibilidade, precisarei ter controle do RNG.
+
+refatorei o código pra facilitar no futuro.
+
+
 # Referências
 https://github.com/paulalmasan/DRL-GNN-PPO
