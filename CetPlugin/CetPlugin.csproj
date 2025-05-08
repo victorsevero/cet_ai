@@ -27,4 +27,9 @@
       PrivateAssets="all"
     />
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FixedMath">
+      <HintPath>libs\FixedMath.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

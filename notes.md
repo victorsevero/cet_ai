@@ -22,6 +22,13 @@ pra acelerar o jogo pra treinamento, encontrei o método `OnExtraFastForwardPres
 existe uma instância de Game dentro do GameContainerScreen, que é um MonoBehaviour. por ela, consigo setar a velocidade do jogo, mas o Game só é instanciado quando a partida de fato começa, então preciso de uma forma de setar isso quando a partida começar pra não precisar setar isso dentro do update toda vez.
 
 
+# Dia 4
+Peguei a lib FixedMath.dll do jogo e deixei como dependência pra conseguir loggar alguns valores. BuildingSpawningProcess parece uma classe útil pra entender comportamentos do relógio.
+
+
+# Dia 5
+pausar quando vira um dia está funcional! agora devo alterar para, em vez de chamar o `SetTimeScale`, usar os métodos `OnExtraFastForwardPressed` e `OnPausePressed` da classe `Motorways.Views.GameUIScreen` (ou talvez `Motorways.Views.GameUIScreenWrapper`, ainda não sei). também precisaria alterar o valor do `TimeScale.ExtraFast`.
+
 
 # Referências
 https://github.com/paulalmasan/DRL-GNN-PPO

@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using BepInEx;
 using BepInEx.Logging;
+using FixMath;
 using HarmonyLib;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -16,19 +19,27 @@ namespace CetPlugin;
 [BepInProcess("Mini Motorways.exe")]
 public class Plugin : BaseUnityPlugin
 {
-    internal static new ManualLogSource Logger;
+    public static Plugin Instance { get; private set; }
+    public static new ManualLogSource Logger { get; private set; }
 
     private Type houseViewType;
     private Type destinationViewType;
-    private int frameCounter = 0;
+
+    // private int frameCounter = 0;
     private GameState currentState = new GameState();
     private TcpClient client;
     private NetworkStream stream;
+    double? lastClockTime = null;
+    private bool shouldSpeedUp = true;
 
     private void Awake()
     {
+        Instance = this;
         Logger = base.Logger;
         Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
+
+        var harmony = new Harmony("cet.clockpatch");
+        harmony.PatchAll();
 
         houseViewType = AccessTools.TypeByName("Motorways.Views.HouseView");
         if (houseViewType == null)
@@ -57,12 +68,16 @@ public class Plugin : BaseUnityPlugin
 
     void Update()
     {
-        frameCounter++;
-        if (frameCounter % 60 != 0)
-            return;
+        // frameCounter++;
+        // if (frameCounter % 60 != 0)
+        //     return;
 
-        SetGameSpeed(100f);
-        CaptureGameState();
+        if (shouldSpeedUp)
+        {
+            SetGameSpeed(100f);
+        }
+        // TryLogClockTime();
+        // CaptureGameState();
     }
 
     void CaptureGameState()
@@ -208,7 +223,7 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
-    void SetGameSpeed(float speed)
+    public void SetGameSpeed(float speed)
     {
         var containerType = AccessTools.TypeByName("Motorways.Views.GameContainerScreen");
         if (containerType == null)
@@ -249,7 +264,6 @@ public class Plugin : BaseUnityPlugin
 
         var timeScaleInstance = Activator.CreateInstance(timeScaleType, new object[] { speed });
 
-        // Chama SetTimeScale
         var gameType = gameInstance.GetType();
         var setTimeScaleMethod = AccessTools.Method(gameType, "SetTimeScale");
         if (setTimeScaleMethod == null)
@@ -259,8 +273,111 @@ public class Plugin : BaseUnityPlugin
         }
 
         setTimeScaleMethod.Invoke(gameInstance, new object[] { timeScaleInstance });
+        shouldSpeedUp = false;
+    }
 
-        Logger.LogInfo($"[Game] Velocidade do jogo setada para {speed}x.");
+    void TryLogClockTime()
+    {
+        var sim = GetSimulation();
+        if (sim == null)
+            return;
+
+        var clockModelType = AccessTools.TypeByName("Motorways.Models.ClockModel");
+        var getModelsRaw = sim.GetType()
+            .GetMethods()
+            .FirstOrDefault(m => m.Name == "GetModels" && m.IsGenericMethod);
+        var getModelsMethod = getModelsRaw?.MakeGenericMethod(clockModelType);
+        var modelList = getModelsMethod?.Invoke(sim, null);
+        if (modelList == null)
+            return;
+
+        var modelsField = modelList
+            .GetType()
+            .GetField("_models", BindingFlags.Instance | BindingFlags.NonPublic);
+        var models = modelsField?.GetValue(modelList) as IEnumerable;
+        if (models == null)
+            return;
+
+        foreach (var model in models)
+        {
+            var timeProp = AccessTools.Property(model.GetType(), "Time");
+            var timeVal = timeProp?.GetValue(model);
+            if (timeVal == null)
+                continue;
+
+            double currentTime = Convert.ToDouble(timeVal.ToString());
+            Logger.LogInfo($"[ClockModel] Visual clock time: {currentTime:F4}");
+
+            if (lastClockTime.HasValue)
+            {
+                int prevDay = (int)(lastClockTime.Value / 20.0);
+                int currentDay = (int)(currentTime / 20.0);
+                if (currentDay > prevDay)
+                {
+                    Logger.LogInfo($"[ClockModel] 🕒 Novo dia detectado! Dia #{currentDay}");
+                    SetGameSpeed(0f);
+                }
+            }
+
+            lastClockTime = currentTime;
+            break;
+        }
+    }
+
+    object GetSimulation()
+    {
+        var containerType = AccessTools.TypeByName("Motorways.Views.GameContainerScreen");
+        if (containerType == null)
+        {
+            Logger.LogWarning("[GetSimulation] Tipo GameContainerScreen não encontrado.");
+            return null;
+        }
+
+        var containers = Resources.FindObjectsOfTypeAll(containerType);
+        if (containers == null || containers.Length == 0)
+        {
+            Logger.LogWarning("[GetSimulation] Nenhum GameContainerScreen encontrado.");
+            return null;
+        }
+
+        var container = containers
+            .Cast<MonoBehaviour>()
+            .FirstOrDefault(c => c.gameObject.activeInHierarchy);
+        if (container == null)
+        {
+            Logger.LogWarning("[GetSimulation] Nenhum GameContainerScreen ativo.");
+            return null;
+        }
+
+        var getGameMethod = AccessTools.Method(containerType, "GetActiveGame");
+        if (getGameMethod == null)
+        {
+            Logger.LogWarning("[GetSimulation] Método GetActiveGame não encontrado.");
+            return null;
+        }
+
+        var game = getGameMethod.Invoke(container, null);
+        if (game == null)
+        {
+            Logger.LogWarning("[GetSimulation] Game retornou null.");
+            return null;
+        }
+
+        var simProp = AccessTools.Property(game.GetType(), "Simulation");
+        if (simProp == null)
+        {
+            Logger.LogWarning("[GetSimulation] Propriedade Simulation não encontrada.");
+            return null;
+        }
+
+        var simulation = simProp.GetValue(game);
+        if (simulation == null)
+        {
+            Logger.LogWarning("[GetSimulation] Simulation retornou null.");
+            return null;
+        }
+
+        return simulation;
     }
 }
 
