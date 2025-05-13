@@ -24,7 +24,9 @@ public class Plugin : BaseUnityPlugin
 
     private TcpClient client;
     private NetworkStream stream;
-    public bool waitingGameStart = true;
+    private bool wasGameNullLastFrame = true;
+    private bool waitingResume = false;
+    private const float SPEED = 10f;
 
     private void Awake()
     {
@@ -38,9 +40,39 @@ public class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        if (waitingGameStart)
+        var containerType = AccessTools.TypeByName("Motorways.Views.GameContainerScreen");
+        var containers = Resources.FindObjectsOfTypeAll(containerType);
+        if (containers.Length == 0)
+            return;
+
+        var getGame = AccessTools.Method(containerType, "GetActiveGame");
+        var game = getGame?.Invoke(containers[0], null);
+
+        if (wasGameNullLastFrame && game != null)
         {
-            SetGameSpeed(10f);
+            Logger.LogInfo("[Game] Active Game detected.");
+            CaptureAndSendGameState();
+            SetGameSpeed(SPEED);
+            waitingResume = true;
+        }
+
+        wasGameNullLastFrame = (game == null);
+
+        if (waitingResume && game != null)
+        {
+            var getTimeScale = AccessTools.Method(game.GetType(), "GetTimeScale");
+            if (getTimeScale != null)
+            {
+                var timeScale = getTimeScale.Invoke(game, null);
+                var scaleProp = timeScale.GetType().GetProperty("Scale");
+                var scale = (float)scaleProp.GetValue(timeScale);
+                if (scale == 0f)
+                {
+                    Logger.LogInfo("[Game] Game is paused.");
+                    CaptureAndSendGameState();
+                    SetGameSpeed(SPEED);
+                }
+            }
         }
     }
 
@@ -94,7 +126,6 @@ public class Plugin : BaseUnityPlugin
         }
 
         setTimeScaleMethod.Invoke(gameInstance, new object[] { timeScaleInstance });
-        waitingGameStart = false;
     }
 
     public void PauseGame() => SetGameSpeed(0f);
@@ -118,6 +149,20 @@ public class Plugin : BaseUnityPlugin
         }
 
         stream.Write(data, 0, data.Length);
+        stream.Flush();
+
+        byte[] buffer = new byte[16];
+        int bytesRead = stream.Read(buffer, 0, buffer.Length);
+        string response = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+
+        if (response.ToLower() != "ack")
+        {
+            Logger.LogWarning($"[Socket] Unexpected response: {response}");
+        }
+        else
+        {
+            Logger.LogInfo("[Socket] ACK received.");
+        }
     }
 
     private void ConnectSocket()
@@ -126,6 +171,7 @@ public class Plugin : BaseUnityPlugin
         {
             client = new TcpClient("localhost", 5000);
             stream = client.GetStream();
+            stream.ReadTimeout = 2000;
             Logger.LogInfo("[Socket] Connected to Python.");
         }
         catch (Exception e)

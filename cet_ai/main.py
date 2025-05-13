@@ -33,6 +33,7 @@ def run_server():
                         try:
                             game_state = json.loads(line)
                             handle_game_state(game_state)
+                            conn.sendall(b"ack\n")
                         except json.JSONDecodeError as e:
                             print(f"[Server] Erro de JSON: {e}")
             except Exception as e:

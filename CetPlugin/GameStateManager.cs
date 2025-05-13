@@ -94,8 +94,8 @@ public class GameStateManager
                 continue;
 
             var tileModel = tileModels[0];
-            var coordinatesField = AccessTools.Field(tileModel.GetType(), "Coordinates");
-            var tileCoordinates = (Vector2Int)coordinatesField.GetValue(tileModel);
+            var coordinatesProp = AccessTools.Property(tileModel.GetType(), "Coordinates");
+            var tileCoordinates = (Vector2Int)coordinatesProp.GetValue(tileModel);
 
             var groupIndex = (int)
                 AccessTools.Field(destinationViewType, "groupIndex")?.GetValue(viewComponent);

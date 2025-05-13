@@ -35,6 +35,8 @@ lembrar de, no futuro, investigar o RNG do jogo: inicialmente, talvez seja inter
 
 refatorei o código pra facilitar no futuro.
 
+# Dia 7
+deixei o speedup automático para quando o servidor retornar um ACK. futuramente preciso mudar isso para uma ação. acredito que o próximo passo seria melhorar o estado do jogo (faltam os recursos disponíveis e o score). para a escolha de recurso, provavelmente vou usar uma heurística pra não aumentar o espaço de ações (e introduzir um action masking desnecessariamente complexo).
 
 # Referências
 https://github.com/paulalmasan/DRL-GNN-PPO
